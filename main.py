@@ -1,45 +1,59 @@
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Dispatcher, MessageHandler, Filters
-import logging
-from config import BOT_TOKEN
-from models import save_user, save_message
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import asyncio
+import os
 
+# ------------------------------
+# Import config
+# ------------------------------
+from config import BOT_TOKEN, WEBHOOK_BASE
+
+# ------------------------------
+# Flask app
+# ------------------------------
 app = Flask(__name__)
-bot = Bot(token=BOT_TOKEN)
 
-# Telegram dispatcher setup
-from telegram.ext import Dispatcher
-dispatcher = Dispatcher(bot, None, workers=4)
+# Telegram Bot instance
+application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-# Basic logger
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# ------------------------------
+# Bot Commands
+# ------------------------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Bot is running successfully on Render! 🚀")
 
-# Message handler
-def handle_message(update: Update, context):
-    user_id = update.effective_user.id
-    text = update.message.text
+# Add command handler
+application.add_handler(CommandHandler("start", start))
 
-    save_user(user_id)
-    save_message(user_id, text)
-
-    update.message.reply_text("Message received!")
-
-dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-
-# Webhook receiver
-@app.route('/', methods=['POST'])
+# ------------------------------
+# Telegram Webhook Receiver
+# ------------------------------
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    json_data = request.get_json(force=True)
-    update = Update.de_json(json_data, bot)
-    dispatcher.process_update(update)
+    data = request.get_json(force=True)
+    update = Update.de_json(data, application.bot)
+
+    asyncio.run(application.process_update(update))
     return "OK", 200
 
-# Health check
-@app.route('/', methods=['GET'])
+# ------------------------------
+# Home Route
+# ------------------------------
+@app.route("/")
 def home():
-    return "Bot is running!", 200
+    return "Bot is Live! 🎉"
 
+# ------------------------------
+# Main Entry Point
+# ------------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    # Build webhook URL
+    webhook_url = f"{WEBHOOK_BASE}/webhook"
+    print("Setting webhook to:", webhook_url)
+
+    # Set Telegram Webhook
+    asyncio.run(application.bot.set_webhook(webhook_url))
+
+    # Run Flask App
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
